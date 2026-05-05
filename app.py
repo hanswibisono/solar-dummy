@@ -1,35 +1,22 @@
 # ============================================================
 # SOLAR PROJECT FINANCIAL CALCULATOR
-# Built with Streamlit — a Python library that turns a
-# regular Python script into an interactive web dashboard.
-#
-# How Streamlit works:
-# - Every time the user changes an input, the whole script
-#   runs top to bottom again automatically.
-# - st.something() functions display things on the page.
-# - That's it. No HTML, no JavaScript needed.
 # ============================================================
 
 import streamlit as st        # the dashboard framework
 import pandas as pd            # for creating and displaying tables
 import numpy_financial as npf  # for IRR calculation (npf.irr)
 
-# ── PAGE CONFIGURATION ───────────────────────────────────────
-# Must be the first Streamlit command in the script.
-# Sets the browser tab title and uses wide layout.
+# PAGE CONFIGURATION
 st.set_page_config(
     page_title="Solar Project Calculator",
     layout="wide"
 )
 
-# ── TITLE & DESCRIPTION ──────────────────────────────────────
+# TITLE & DESCRIPTION
 st.title("Solar Project Financial Calculator")
 st.caption("25-year cash flow model · All-equity · No financing costs")
 
-# ── MODEL ASSUMPTIONS (CONSTANTS) ────────────────────────────
-# These never change — they are the financial model assumptions.
-# Defining them at the top makes them easy to find and update.
-
+# MODEL ASSUMPTIONS (CONSTANTS)
 COST_PER_W  = 2.50    # $2.50 per watt installed cost
 GEN_PER_KW  = 1400    # 1,400 kWh generated per kW per year
 ESCALATION  = 0.025   # electricity price grows 2.5% per year
@@ -37,8 +24,8 @@ OM_PER_KW   = 15      # $15 per kW per year for operations & maintenance
 ITC         = 0.30    # 30% Investment Tax Credit applied in Year 0
 YEARS       = 25      # project lifetime
 
-# ── ELECTRICITY RATES BY STATE ───────────────────────────────
-# Dictionary: state name → residential electricity rate in ¢/kWh
+# ELECTRICITY RATES BY STATE
+# State residential electricity rate in ¢/kWh
 # Source: ElectricChoice.com, May 2026
 
 STATE_RATES = {
@@ -61,18 +48,16 @@ STATE_RATES = {
     "West Virginia": 13.11, "Wisconsin": 18.06, "Wyoming": 12.55
 }
 
-# ── KEY INPUTS ───────────────────────────────
+# KEY INPUTS
 st.subheader("Inputs")
 col1, col2 = st.columns(2)
 
 # Dropdown to select a US state
-# sorted() sorts the state names alphabetically
-
 with col1 :
     selected_state = st.selectbox(
     label="US State",
-    options=sorted(STATE_RATES.keys()),  # list of all state names
-    index=sorted(STATE_RATES.keys()).index("New York")  # default to New York
+    options=sorted(STATE_RATES.keys()),
+    index=sorted(STATE_RATES.keys()).index("New York")
 )
 
 # Number input for system size
@@ -81,16 +66,14 @@ with col2 :
     label="System size (kW DC)",
     min_value=1,
     max_value=1000,
-    value=10,      # default value
-    step=1,         # how much each click of the arrow changes it
+    value=10,
+    step=1,
     key="system_size"
 )
 
 st.button("Calculate",type="primary")
 
-# ── SIDEBAR  ───────────────────────────────────────────
-
-# Show the model assumptions in the sidebar so the user can see them
+# SIDEBAR
 st.sidebar.subheader("Model assumptions")
 st.sidebar.caption(f"Installed cost: ${COST_PER_W}/W")
 st.sidebar.caption(f"Generation: {GEN_PER_KW:,} kWh/kW/yr")
@@ -99,40 +82,29 @@ st.sidebar.caption(f"O&M cost: ${OM_PER_KW}/kW/yr")
 st.sidebar.caption(f"ITC: {int(ITC*100)}% in Year 0")
 st.sidebar.caption("Source: ElectricChoice.com (May 2026)")
 
-# ── FINANCIAL CALCULATIONS ───────────────────────────────────
-# All the math happens here, using the inputs from the sidebar.
-# This section runs every time the user changes an input.
+# FINANCIAL CALCULATIONS
 
 # Look up the electricity rate for the selected state
 rate_cents = STATE_RATES[selected_state]  # ¢/kWh
 
-# --- Upfront costs ---
+# --- Upfront costs
 gross_cost  = system_size_kw * 1000 * COST_PER_W   # total before ITC
 itc_credit  = gross_cost * ITC                       # 30% tax credit
 net_cost    = gross_cost - itc_credit                # actual cash out Year 0
 
-# --- Annual generation ---
+# --- Annual generation
 annual_gen  = system_size_kw * GEN_PER_KW   # kWh/year
 annual_om   = system_size_kw * OM_PER_KW    # $/year O&M cost
 
-# --- Build 25-year cash flow model ---
-# We store each year's data in a list of dictionaries,
-# then convert to a pandas DataFrame for easy display.
-
+# --- Build 25-year cash flow model
 cashflows   = [-net_cost]   # Year 0 is a cash outflow (investment)
 rows        = []            # will become the table
 cumulative  = -net_cost     # running total starts at Year 0 outflow
-payback_year = None         # track when cumulative turns positive
+payback_year = None         # check when cumulative turns positive
 
 for year in range(1, YEARS + 1):
-    # range(1, 26) gives us [1, 2, 3, ... 25]
-
     # Electricity rate escalates 2.5% per year
-    # Year 1: rate × 1.025^0 = unchanged
-    # Year 2: rate × 1.025^1 = +2.5%
-    # Year 3: rate × 1.025^2 = +5.06% etc.
     rate_this_year = (rate_cents / 100) * (1 + ESCALATION) ** (year - 1)
-    # ** is Python's exponentiation operator (same as Math.pow in JS)
 
     # Energy savings = electricity avoided × rate
     energy_savings = annual_gen * rate_this_year
@@ -141,7 +113,7 @@ for year in range(1, YEARS + 1):
     net_cf = energy_savings - annual_om
 
     # Update running cumulative total
-    cumulative += net_cf   # += means cumulative = cumulative + net_cf
+    cumulative += net_cf
 
     # Add to IRR cash flow array
     cashflows.append(net_cf)
@@ -162,21 +134,15 @@ for year in range(1, YEARS + 1):
     })
 
 # Calculate IRR using numpy_financial
-# npf.irr() takes a list of cash flows and returns the IRR as a decimal
 irr = npf.irr(cashflows)
 
-# ── METRIC CARDS (KEY OUTPUTS) ───────────────────────────────
-# st.columns(n) splits the page into n equal columns side by side.
-# We use this to show multiple metric cards in a row.
-
+# METRIC CARDS (KEY OUTPUTS)
 st.subheader("Key metrics")
 col1, col2, col3, col4, col5 = st.columns(5)
-
-# st.metric() displays a labeled number — built into Streamlit
 with col1:
     st.metric(
         label="System upfront price",
-        value=f"${gross_cost:,.0f}",   # :,.0f = comma-separated, no decimals
+        value=f"${gross_cost:,.0f}",
         help="Total installed cost before the ITC tax credit"
     )
 
@@ -197,7 +163,7 @@ with col3:
 with col4:
     st.metric(
         label="Project IRR",
-        value=f"{irr*100:.1f}%",       # multiply by 100 to convert to %
+        value=f"{irr*100:.1f}%",
         help="Internal Rate of Return over 25 years, unlevered"
     )
 
@@ -208,7 +174,7 @@ with col5:
         help="Year when cumulative cash flow turns positive"
     )
 
-# ── CASH FLOW TABLE ───────────────────────────────────────────
+# CASH FLOW TABLE
 st.divider()
 st.subheader("25-year cash flow table")
 
@@ -224,13 +190,11 @@ year_zero = {
 }
 
 # Convert rows list to a pandas DataFrame
-# A DataFrame is like a spreadsheet in Python — rows and columns
 df = pd.DataFrame([year_zero] + rows)
 
 # Display the table using Streamlit
-# hide_index=True removes the default 0,1,2... row numbers on the left
 st.dataframe(
     df,
     hide_index=True,
-    use_container_width=True   # stretches the table to fill the full width
+    use_container_width=True
 )
